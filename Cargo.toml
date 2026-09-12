@@ -1,0 +1,25 @@
+[package]
+name = "astropng-core"
+version = "0.1.0"
+edition = "2021"
+description = "Shared core for the AstroPNG family: XISF/FITS -> PNG conversion, stretch, resize, stamp, and SIMBAD catalogue lookup, exposed as a Rust crate and a C ABI for other-language ports"
+
+[lib]
+name = "astropng_core"
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+roxmltree = "0.20"
+base64 = "0.22"
+hex = "0.4"
+flate2 = "1"
+lz4_flex = "0.11"
+ruzstd = "0.7"
+image = { version = "0.25", default-features = false, features = ["png"] }
+ab_glyph = "0.2"
+ureq = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
