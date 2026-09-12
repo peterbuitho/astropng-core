@@ -1,0 +1,87 @@
+# When a new astropng-core version is tagged, opens a PR against each
+# consumer repo (xisf2png, AstroGoPNG, Astro2PNG, AstroScalaPNG) bumping its
+# pinned astropng-core version. Each PR only updates the pin; a human still
+# reviews and merges it (the consumer's own CI/release then verifies the
+# bump actually builds).
+#
+# Needs the ASTROPNG_CORE_BUMP_TOKEN secret: a token with Contents
+# (read/write) and Pull requests (read/write) permission on all four
+# consumer repos, since the default GITHUB_TOKEN only has access to this
+# repo.
+name: Notify consumers of new version
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to announce (e.g. v0.2.0) — only needed for a manual run"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Bump pin in ${{ matrix.repo }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repo: peterbuitho/xisf2png
+            kind: cargo
+          - repo: peterbuitho/AstroGoPNG
+            kind: version-file
+          - repo: peterbuitho/Astro2PNG
+            kind: version-file
+          - repo: peterbuitho/AstroScalaPNG
+            kind: version-file
+    steps:
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          token: ${{ secrets.ASTROPNG_CORE_BUMP_TOKEN }}
+          path: consumer
+
+      - name: Bump third_party/astropng-core/VERSION
+        if: matrix.kind == 'version-file'
+        run: echo "${{ steps.ver.outputs.value }}" > consumer/third_party/astropng-core/VERSION
+
+      - name: Bump Cargo.toml git tag pin
+        if: matrix.kind == 'cargo'
+        run: |
+          set -euo pipefail
+          sed -i -E \
+            's#(astropng-core = \{ git = "https://github.com/peterbuitho/astropng-core", tag = ")[^"]+(" \})#\1${{ steps.ver.outputs.value }}\2#' \
+            consumer/Cargo.toml
+          grep astropng-core consumer/Cargo.toml
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.ASTROPNG_CORE_BUMP_TOKEN }}
+          path: consumer
+          branch: bump-astropng-core-${{ steps.ver.outputs.value }}
+          delete-branch: true
+          commit-message: "Bump astropng-core to ${{ steps.ver.outputs.value }}"
+          title: "Bump astropng-core to ${{ steps.ver.outputs.value }}"
+          body: |
+            Bumps the pinned [astropng-core](https://github.com/peterbuitho/astropng-core) version to
+            [`${{ steps.ver.outputs.value }}`](https://github.com/peterbuitho/astropng-core/releases/tag/${{ steps.ver.outputs.value }}).
+
+            Opened automatically by astropng-core's `notify-consumers` workflow.
+            This only bumps the version pin — check the
+            [changelog](https://github.com/peterbuitho/astropng-core/releases/tag/${{ steps.ver.outputs.value }})
+            and let this repo's own CI verify the build before merging.
